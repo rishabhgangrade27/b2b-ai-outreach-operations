@@ -1,0 +1,26 @@
+[
+  {
+    "business_name": "Northfield Contracting",
+    "website": "https://northfield.example",
+    "segment_key": "segment_a",
+    "region_key": "region_1",
+    "source": "places_search",
+    "discovered_at": "2026-01-03T09:12:00"
+  },
+  {
+    "business_name": "Bluepoint Services",
+    "website": "https://bluepoint.example",
+    "segment_key": "segment_b",
+    "region_key": "region_2",
+    "source": "places_search",
+    "discovered_at": "2026-01-03T09:12:04"
+  },
+  {
+    "business_name": "Ridgeline Group",
+    "website": "https://ridgeline.example",
+    "segment_key": "segment_c",
+    "region_key": "region_3",
+    "source": "places_search",
+    "discovered_at": "2026-01-03T09:12:09"
+  }
+]

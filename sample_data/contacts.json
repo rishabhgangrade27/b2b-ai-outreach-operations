@@ -1,0 +1,23 @@
+[
+  {
+    "business_name": "Northfield Contracting",
+    "email": "hello@northfield.example",
+    "phone": "0400 000 001",
+    "extraction_method": "mailto",
+    "stage": "in_crm"
+  },
+  {
+    "business_name": "Bluepoint Services",
+    "email": "info@bluepoint.example",
+    "phone": "0400 000 003",
+    "extraction_method": "regex_fallback",
+    "stage": "drafted"
+  },
+  {
+    "business_name": "Ridgeline Group",
+    "email": null,
+    "phone": null,
+    "extraction_method": "none",
+    "stage": "discovered"
+  }
+]

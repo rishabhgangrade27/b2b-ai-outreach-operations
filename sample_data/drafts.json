@@ -1,0 +1,20 @@
+[
+  {
+    "contact_email": "hello@northfield.example",
+    "subject": "Quick question for Northfield Contracting",
+    "body": "Hi team,\n\nCame across Northfield Contracting while researching businesses in your area. We work with similar companies on reducing manual admin overhead - thought it might be relevant to what you're doing.\n\nOpen to a short chat?\n\nBest,\nOutreach Team",
+    "template_key": "segment_a",
+    "generated_by": "template",
+    "stage_label": "initial",
+    "approval_state": "approved"
+  },
+  {
+    "contact_email": "info@bluepoint.example",
+    "subject": "Thought this might be useful for Bluepoint Services",
+    "body": "Hi there,\n\nReaching out because Bluepoint Services came up in our research on companies in your segment. We help teams like yours with improving lead response time.\n\nWorth 10 minutes?\n\nBest,\nOutreach Team",
+    "template_key": "segment_b",
+    "generated_by": "template",
+    "stage_label": "initial",
+    "approval_state": "pending"
+  }
+]
