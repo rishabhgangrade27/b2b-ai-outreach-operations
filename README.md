@@ -218,11 +218,6 @@ codebase. What changed going from production to public:
   failure modes documented above are real; the data and infrastructure
   around them are not.
 
-## 🎥 Engineering walkthrough
-
-_A 2-3 minute walkthrough covering the architecture, the approval/rate-limit
-implementation, and a live run of the demo will be linked here._
-
 ## License
 
 All rights reserved - see [LICENSE](LICENSE). Published for portfolio/
