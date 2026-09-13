@@ -1,29 +1,15 @@
 # B2B AI Operations & Outreach System
 
-A sanitized, runnable reference implementation of an AI-assisted B2B lead
-discovery and outreach system: **discovery → enrichment → CRM → AI drafting
-→ human approval → safety controls → controlled sending → follow-up
-state.**
+A sanitized, runnable Python reference implementation of a B2B lead-discovery and outreach-operations system: **discovery → contact extraction → validation → CRM → AI-assisted drafting → human approval → safety controls → dry-run delivery → follow-up state.**
 
-This is derived from a real system I built and operated in production for
-several months. This repository is not that system - it's a public-safe
-reconstruction of its architecture and engineering patterns, with all
-client-specific data, credentials, and infrastructure replaced by mocks and
-synthetic fixtures. See [Production vs. public-demo boundary](#production-vs-public-demo-boundary)
-below for exactly what that means.
+> **Scope:** This is a public-safe reconstruction of a system derived from real production work, not the original production codebase. The public demo uses synthetic fixtures and mock integrations. It does not send real outreach. No client data, credentials, or production infrastructure are included.
 
-## Why this exists
+## At a glance
 
-"Connect an LLM to an inbox" is not the hard part of B2B outreach
-automation. The hard part is everything around it: finding real,
-correctly-contactable businesses at a sustainable rate; not emailing the
-same business twice; not emailing a competitor; not sending faster than a
-new sending identity can sustain; and - most importantly - never letting an
-AI-generated action reach a real inbox without a person explicitly signing
-off on it first.
-
-This project is the answer to "what does it take to run that safely,
-unattended, for months, without an incident."
+- **Runnable offline:** `python demo.py` walks the workflow using mock integrations; no API keys or network access required.
+- **Tested:** 29 tests cover core workflow behavior, failure cases, and persistence. Run with `python -m pytest -v`.
+- **Operational controls:** explicit human approval before delivery, warm-up tiers, randomized daily caps, jitter, deduplication, and permanent halt behavior.
+- **Production boundary:** the architecture and generalized engineering patterns are reconstructed; the public integrations and data are not production-connected.
 
 ## Architecture
 
@@ -35,92 +21,32 @@ flowchart TD
     D --> E[Competitor filter]
     E --> F[Deduplication]
     F --> G[CRM]
-    G --> H[Outreach drafting - template first, LLM fallback]
-    H --> I[Slack human approval]
-    I -- rejected --> J[Halt - permanent]
-    I -- approved --> K[Rate limiter - warmup tier + daily cap + jitter]
-    K --> L[Email delivery]
+    G --> H[Template-first / LLM fallback drafting]
+    H --> I[Human approval in Slack]
+    I -- rejected --> J[Permanent halt]
+    I -- approved --> K[Rate limiter: warmup + cap + jitter]
+    K --> L[Email delivery adapter]
     L --> M[Persistent state]
-    M --> N[Follow-up cadence scheduler]
+    M --> N[Follow-up cadence]
     N -- due --> H
     N -- halted --> J
 ```
 
-Full data-flow and approval-sequence diagrams: [docs/architecture.md](docs/architecture.md).
+The public implementation is code-first and has no user-facing UI. Full data-flow and approval-sequence diagrams are in [docs/architecture.md](docs/architecture.md).
 
-## Key capabilities
+## Workflow and engineering decisions
 
-- **Lead discovery** across multiple regions and customer segments, with
-  pagination handling that doesn't silently drop results past the first page.
-- **Contact extraction** from a business's own website - preferring a
-  published `mailto:` link, falling back to a domain-restricted text scan
-  that specifically recovers from a phone number glued directly against an
-  email with no separator (a real, previously-fixed bug - see
-  [tests/test_email_extraction.py](tests/test_email_extraction.py)).
-- **CRM integration** - lead discovery writes into an actual CRM record,
-  it isn't an isolated scraper with a spreadsheet on the side.
-- **AI-assisted drafting** - templates first, LLM fallback only when a
-  segment has no template.
-- **Human-in-the-loop approval** via a chat reaction, not a bespoke UI.
-- **Rate limiting** - warmup tiers, a randomized (not fixed) daily cap, and
-  per-send jitter.
-- **Persistent, crash-safe state** - approval state, send history, and
-  halt status survive a process restart.
-- **Follow-up cadence** across multiple stages, with permanent halt on
-  rejection or explicit operator action.
-- **Deduplication** against CRM records, local state, and the current
-  discovery run simultaneously.
-- **Competitor filtering** before a lead ever reaches drafting.
-- **Fault-isolated background scheduling** - one job's exception can't take
-  down the others.
+1. **Discover** businesses by region and segment, handling pagination rather than silently dropping later results.
+2. **Extract and validate** contact emails from each business's own website (`mailto:` first, constrained fallback second). A regression test covers a previously fixed case where a phone number was glued directly to an email.
+3. **Filter and deduplicate** against a competitor blocklist, CRM records, local state, and the current run.
+4. **Create CRM records** for eligible leads.
+5. **Draft** with templates first and an LLM fallback only when a segment has no template.
+6. **Require human approval** through a chat reaction before any delivery attempt.
+7. **Apply safety controls** including warm-up tiers, randomized daily caps, per-send jitter, and permanent halt on rejection or operator action.
+8. **Deliver through an adapter.** In this public repository, delivery is dry-run only; it records the simulated send in persistent state and does not send email.
+9. **Schedule follow-ups** from persisted state, excluding halted contacts.
 
-## How the workflow works
-
-1. **Discovery** searches each region x segment combination against a
-   business-search provider and pulls each result's own website.
-2. **Extraction** pulls a contact email off that website - `mailto:` first,
-   then a constrained regex fallback.
-3. **Validation** drops anything that isn't a plausible, non-role email.
-4. **Competitor filtering** drops anything matching a known-competitor
-   blocklist.
-5. **Deduplication** drops anything already in the CRM, already in local
-   state, or already seen earlier in the same run.
-6. **CRM** gets a new record for what's left.
-7. **Drafting** produces a subject + body - template-first, LLM fallback.
-8. **Approval** posts the draft to a chat channel; a human reacts to
-   approve or reject.
-9. **Safety checks + rate limiter** confirm today's send cap hasn't been
-   reached and apply a send-time jitter.
-10. **Delivery** sends (or, in this repo, dry-runs) the email and records
-    the send in state.
-11. **Follow-up** cadence checks state on a schedule and queues the next
-    stage's draft when it's due - unless the contact has been halted.
-
-## Human-in-the-loop design
-
-An AI-drafted email is not allowed to cause an external side effect on its
-own. The draft is posted to a chat channel; a checkmark reaction approves
-it, a cross rejects it. Rejection isn't "skip this one" - it halts the
-contact permanently, so a human's "no" can't be silently overridden by the
-next scheduled cadence stage. This is the actual point of the whole
-architecture: the interesting engineering problem was never generating the
-email, it was controlling what happens after.
-
-## Safety controls
-
-- **Validation** - reject malformed or role-address contacts before they're
-  actionable.
-- **Competitor filtering** - a plain, auditable substring blocklist.
-- **Deduplication** - checked against CRM + local state + the current run.
-- **Approval gating** - nothing sends without an explicit human approval.
-- **Rate limiting** - warmup tiers, randomized daily caps, send jitter.
-- **Retries / fault isolation** - one background job's failure can't stop
-  the others.
-- **State persistence** - crash-safe (temp-file-then-move) writes; approval,
-  send history, and halt status all survive a restart.
-- **Halt behavior** - permanent removal from all future outreach.
-
-Full writeup: [docs/safety-controls.md](docs/safety-controls.md).
+The central design principle is that approval gates the external side effect; it does not merely audit it afterward. A rejection means permanent halt, not “skip this one and try again later.”
 
 ## Local demo
 
@@ -130,32 +56,23 @@ pip install -r requirements.txt
 python demo.py
 ```
 
-No API keys or `.env` required - everything runs against mock integrations.
-Full walkthrough: [docs/demo.md](docs/demo.md).
+The demo uses mocks and synthetic data. It requires no `.env`, API keys, or network access. See [docs/demo.md](docs/demo.md) for the walkthrough and [docs/safety-controls.md](docs/safety-controls.md) for the control model.
 
 ## Example output
 
-```
-----------------------------------------------------------------------
+```text
 6. HUMAN APPROVAL (Slack reaction simulation)
-----------------------------------------------------------------------
   hello@northfield.example: approved
   office@harbortrade.example: approved
-  info@bluepoint.example: rejected  -> halted, will never re-enter cadence
+  info@bluepoint.example: rejected -> halted, will never re-enter cadence
 
-----------------------------------------------------------------------
 7. SAFETY CHECKS + RATE LIMITER
-----------------------------------------------------------------------
   day 2 of operation -> warmup tier cap for today: 12 sends
 
-----------------------------------------------------------------------
 8. CONTROLLED SEND
-----------------------------------------------------------------------
   hello@northfield.example: queued with 35min jitter -> DRY RUN (no real email sent)
   office@harbortrade.example: queued with 41min jitter -> DRY RUN (no real email sent)
 ```
-
-Full output: run `python demo.py`, or see [docs/demo.md](docs/demo.md).
 
 ## Testing
 
@@ -163,62 +80,30 @@ Full output: run `python demo.py`, or see [docs/demo.md](docs/demo.md).
 python -m pytest -v
 ```
 
-29 tests covering: rate-limiter tier/cap/jitter behavior, the
-email-extraction regression (the glued phone/email bug), competitor
-filtering, deduplication, halt/cadence rules, approval-flow state
-transitions, and state-store persistence/atomicity. Every test runs against
-mocks or fixtures - no live API calls, no network access required.
+The 29 tests cover rate-limiter tiers/caps/jitter, the email-extraction regression, competitor filtering, deduplication, halt/cadence rules, approval-state transitions, and state-store persistence/atomicity. Tests use mocks or fixtures; they do not make live API calls.
 
-## Production lessons / engineering decisions
+## Production lessons
 
-Selected, generalized lessons from operating the real system this is
-derived from (client-identifying specifics deliberately omitted):
+The public repository includes generalized lessons from operating the source system, with client-identifying details omitted:
 
-- **Pagination that silently caps results is worse than an API that
-  errors** - a CRM sync that only read the first page believed a board was
-  smaller than it was, and re-processed contacts that were already present.
-- **Silent search-space exhaustion looks like "it's working, just
-  slower"** - a discovery search too broad to find new results within its
-  page limit doesn't error, it just quietly yields less over time. Fixed by
-  narrowing the search space (region x segment) rather than widening the
-  page limit.
-- **A failed API call and an empty result must never look the same to
-  calling code** - otherwise retry logic and write logic both make the
-  wrong call.
-- **Human approval has to gate the side effect, not audit it afterward** -
-  only works if reversal is free, and an outbound email isn't reversible.
-- **A rejection should mean "stop," not "skip once"** - the default for a
-  human saying no should be permanent halt, not a retry with different
-  wording.
-- **A background daemon needs an explicit, checkable "what's running right
-  now"** separate from what's in the repo - deploys can go silently stale.
-- **`DRY_RUN` belongs in the function signature, not a global flag buried
-  downstream** - so no caller can forget to check it.
+- Pagination that silently caps results can cause incomplete CRM syncs and duplicate processing.
+- A failed API call and a valid empty result must remain distinguishable to callers.
+- Search-space exhaustion can look like a slow system; partitioning by region and segment can be more effective than merely increasing page limits.
+- A human rejection should halt future outreach, not trigger a differently worded retry.
+- A daemon needs an explicit, checkable view of what is currently running, separate from what is present in the repository.
+- `DRY_RUN` should be explicit at the delivery boundary, not hidden in a distant global flag.
 
-Full writeup, with more detail on each: [docs/lessons-learned.md](docs/lessons-learned.md).
-Design rationale for specific choices (why templates-first, why a flat-file
-state store, why a blocklist over fuzzy matching): [docs/design-decisions.md](docs/design-decisions.md).
+Further detail: [docs/lessons-learned.md](docs/lessons-learned.md) and [docs/design-decisions.md](docs/design-decisions.md).
 
 ## Production vs. public-demo boundary
 
-This repository is a sanitized reference implementation, not the production
-codebase. What changed going from production to public:
+This repository is a sanitized reference implementation, not the production codebase:
 
-- All credentials, board/channel IDs, and infrastructure details were
-  removed - every integration is an interface plus a mock (see
-  `src/integrations/`), driven by `.env.example` placeholders.
-- All client data - contacts, CRM records, logs, deployment configuration -
-  was excluded entirely, not merely redacted.
-- Business/segment/region names are generic placeholders, not the real
-  operator's industry or client.
-- The business logic - discovery orchestration, extraction, validation,
-  deduplication, drafting, approval flow, rate limiting, cadence, and
-  fault-isolated scheduling - is the same reconstructed logic that actually
-  ran in production, ported to synthetic fixtures. The architecture and the
-  failure modes documented above are real; the data and infrastructure
-  around them are not.
+- Credentials, board/channel IDs, infrastructure details, client records, logs, and deployment configuration are excluded.
+- Integrations are represented by interfaces and mock implementations; the public delivery path is dry-run only.
+- Business/segment/region names and example contacts are synthetic placeholders.
+- The reconstructed business logic covers discovery orchestration, extraction, validation, deduplication, drafting, approval, rate limiting, cadence, and fault-isolated scheduling. The public repository does not connect to the original production environment.
 
 ## License
 
-All rights reserved - see [LICENSE](LICENSE). Published for portfolio/
-reference purposes; not licensed for reuse.
+All rights reserved. See [LICENSE](LICENSE). Published for portfolio/reference purposes; not licensed for reuse.
